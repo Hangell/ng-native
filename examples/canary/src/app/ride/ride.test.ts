@@ -14,6 +14,9 @@ import {
   searchPlaces,
 } from './ride-model.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const flatten = (nodes: readonly FakeFabricNode[]): FakeFabricNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
@@ -48,7 +51,7 @@ async function boot() {
   });
   const nav = app.componentRef.injector.get(NativeNavigation);
   await nav.push('/ride');
-  await screen.findByRole('button', { name: 'Where to?' });
+  await screen.findByRole('button', { name: 'Where to?' }, asyncWait);
   return { ...app, nav };
 }
 
@@ -56,7 +59,7 @@ describe('ride', () => {
   test('opens the sheet with detents, leaving the map usable under the smallest', async () => {
     const { fabric } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'Where to?' }));
-    await screen.findByLabelText('Search destinations');
+    await screen.findByLabelText('Search destinations', undefined, asyncWait);
     const sheet = flatten(fabric.committed)
       .filter((node) => node.viewName === 'RNSScreen')
       .at(-1)!;
@@ -67,9 +70,14 @@ describe('ride', () => {
   test('chooses a destination, draws the route, and prices every kind of ride', async () => {
     const { fabric } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'Where to?' }));
-    await userEvent.type(await screen.findByLabelText('Search destinations'), 'tate');
-    await userEvent.press(await screen.findByRole('button', { name: 'Tate Modern, Bankside' }));
-    await screen.findByRole('radio', { name: /^Economy, £/ });
+    await userEvent.type(
+      await screen.findByLabelText('Search destinations', undefined, asyncWait),
+      'tate',
+    );
+    await userEvent.press(
+      await screen.findByRole('button', { name: 'Tate Modern, Bankside' }, asyncWait),
+    );
+    await screen.findByRole('radio', { name: /^Economy, £/ }, asyncWait);
     expect(screen.getAllByRole('radio')).toHaveLength(3);
     const map = flatten(fabric.committed).find((node) => 'markers' in node.props)!;
     expect(map.props['polylines']).toHaveLength(1);
@@ -81,15 +89,18 @@ describe('ride', () => {
       await boot();
       await userEvent.press(screen.getByRole('button', { name: 'Where to?' }));
       await userEvent.press(
-        await screen.findByRole('button', { name: 'Borough Market, Southwark' }),
+        await screen.findByRole('button', { name: 'Borough Market, Southwark' }, asyncWait),
       );
-      await userEvent.press(await screen.findByRole('radio', { name: /^Comfort/ }));
+      await userEvent.press(await screen.findByRole('radio', { name: /^Comfort/ }, asyncWait));
       await userEvent.press(screen.getByRole('button', { name: 'Request Comfort' }));
-      await screen.findByText('Finding a driver');
+      await screen.findByText('Finding a driver', undefined, asyncWait);
       await vi.advanceTimersByTimeAsync(2100);
-      await screen.findByText(/is on the way$/);
+      await screen.findByText(/is on the way$/, undefined, asyncWait);
       await userEvent.press(screen.getByRole('button', { name: 'Cancel ride' }));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Where to?' })).toBeTruthy());
+      await waitFor(
+        () => expect(screen.getByRole('button', { name: 'Where to?' })).toBeTruthy(),
+        asyncWait,
+      );
     } finally {
       vi.useRealTimers();
     }

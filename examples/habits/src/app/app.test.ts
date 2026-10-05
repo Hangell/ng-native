@@ -5,6 +5,9 @@ import { expect, test } from 'vitest';
 import { App } from './app.ts';
 import { routes } from './app.routes.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const start = () =>
   render(App, { providers: [provideNativeRouter(routes, withComponentInputBinding())] });
 
@@ -13,7 +16,8 @@ function stateOf(node: { props: Record<string, unknown> }) {
   return (node.props['accessibilityState'] ?? {}) as { checked?: boolean; disabled?: boolean };
 }
 
-const checkbox = (name: ByRoleOptions['name']) => screen.findByRole('checkbox', { name });
+const checkbox = (name: ByRoleOptions['name']) =>
+  screen.findByRole('checkbox', { name }, asyncWait);
 
 test('checks a habit off, and its streak grows', async () => {
   await start();
@@ -22,7 +26,7 @@ test('checks a habit off, and its streak grows', async () => {
   await userEvent.press(await checkbox('Exercise'));
 
   expect(stateOf(await checkbox('Exercise')).checked).toBe(true);
-  expect(await screen.findByText('7 days')).toBeTruthy();
+  expect(await screen.findByText('7 days', undefined, asyncWait)).toBeTruthy();
 });
 
 test('unchecking a habit undoes it', async () => {
@@ -36,35 +40,37 @@ test('unchecking a habit undoes it', async () => {
 
 test('creates a habit through the form, and it shows up on Today', async () => {
   await start();
-  await userEvent.press(await screen.findByRole('button', { name: 'New habit' }));
+  await userEvent.press(await screen.findByRole('button', { name: 'New habit' }, asyncWait));
 
   const user = userEvent.setup();
-  await user.type(await screen.findByLabelText('Habit name'), 'Stretch');
+  await user.type(await screen.findByLabelText('Habit name', undefined, asyncWait), 'Stretch');
   await user.press(screen.getByLabelText('Colour #0ea5e9'));
   await user.press(screen.getByRole('button', { name: 'Save' }));
 
-  expect(await screen.findByText('Stretch')).toBeTruthy();
+  expect(await screen.findByText('Stretch', undefined, asyncWait)).toBeTruthy();
   expect(stateOf(await checkbox('Stretch')).checked).toBe(false);
 });
 
 test('a habit needs a name, and two habits cannot share one', async () => {
   await start();
-  await userEvent.press(await screen.findByRole('button', { name: 'New habit' }));
+  await userEvent.press(await screen.findByRole('button', { name: 'New habit' }, asyncWait));
 
-  const save = await screen.findByRole('button', { name: 'Save' });
+  const save = await screen.findByRole('button', { name: 'Save' }, asyncWait);
   expect(stateOf(save).disabled).toBe(true);
 
   const user = userEvent.setup();
-  await user.type(await screen.findByLabelText('Habit name'), 'Exercise');
+  await user.type(await screen.findByLabelText('Habit name', undefined, asyncWait), 'Exercise');
 
-  expect(await screen.findByText('Already tracking a habit with this name')).toBeTruthy();
+  expect(
+    await screen.findByText('Already tracking a habit with this name', undefined, asyncWait),
+  ).toBeTruthy();
 });
 
 test('opening a habit shows its streak, and back returns to Today', async () => {
   const { componentRef } = await start();
-  await userEvent.press(await screen.findByRole('button', { name: 'Read' }));
+  await userEvent.press(await screen.findByRole('button', { name: 'Read' }, asyncWait));
 
-  expect(await screen.findByText('Last 10 weeks')).toBeTruthy();
+  expect(await screen.findByText('Last 10 weeks', undefined, asyncWait)).toBeTruthy();
 
   componentRef.injector.get(NativeNavigation).back();
 

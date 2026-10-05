@@ -2,6 +2,11 @@ import { DestroyRef, InjectionToken, Injector, Service, inject } from '@angular/
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, injectService, render, screen } from './index.ts';
 
+// Template strings need the optional JIT compiler, loaded before a test's assertions.
+beforeAll(async () => {
+  await import('@angular/compiler');
+}, 30_000);
+
 interface Source {
   current(): string;
   subscribe(listener: () => void): () => void;

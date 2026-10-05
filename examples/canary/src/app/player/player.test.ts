@@ -16,6 +16,9 @@ import {
   type TrackPlayer,
 } from './player-model.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const flatten = (nodes: readonly FakeFabricNode[]): FakeFabricNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
@@ -85,7 +88,11 @@ async function boot() {
   });
   const nav = app.componentRef.injector.get(NativeNavigation);
   await nav.push('/player');
-  await screen.findByRole('button', { name: `${TRACKS[0]!.title} by ${TRACKS[0]!.artist}` });
+  await screen.findByRole(
+    'button',
+    { name: `${TRACKS[0]!.title} by ${TRACKS[0]!.artist}` },
+    asyncWait,
+  );
   return { ...app, nav, ...fake };
 }
 
@@ -94,7 +101,7 @@ describe('player', () => {
     const { calls } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'Naima by John Coltrane' }));
     expect(calls).toEqual(['replace', 'play']);
-    await screen.findByRole('button', { name: 'Now playing, Naima' });
+    await screen.findByRole('button', { name: 'Now playing, Naima' }, asyncWait);
     expect(screen.getByLabelText('Playing')).toBeTruthy();
     await userEvent.press(screen.getByRole('button', { name: 'Pause' }));
     expect(calls.at(-1)).toBe('pause');
@@ -113,22 +120,24 @@ describe('player', () => {
   test('opens the full player as a page sheet, seeks from the scrubber, and steps the queue', async () => {
     const { calls, fabric } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'So What by Miles Davis' }));
-    await userEvent.press(await screen.findByRole('button', { name: 'Now playing, So What' }));
-    await screen.findByRole('button', { name: 'Next' });
+    await userEvent.press(
+      await screen.findByRole('button', { name: 'Now playing, So What' }, asyncWait),
+    );
+    await screen.findByRole('button', { name: 'Next' }, asyncWait);
     const sheet = flatten(fabric.committed)
       .filter((node) => node.viewName === 'RNSScreen')
       .at(-1)!;
     expect(sheet.props['stackPresentation']).toBe('pageSheet');
     await userEvent.press(screen.getByRole('button', { name: 'Next' }));
     expect(calls.slice(-2)).toEqual(['replace', 'play']);
-    await waitFor(() => expect(screen.getAllByText('Naima').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Naima').length).toBeGreaterThan(0), asyncWait);
   });
 
   test('moves on to the next record when one finishes', async () => {
     const { calls, state } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'So What by Miles Davis' }));
     state.update((s) => ({ ...s, playing: false, currentTime: 6, ended: true }));
-    await screen.findByRole('button', { name: 'Now playing, Naima' });
+    await screen.findByRole('button', { name: 'Now playing, Naima' }, asyncWait);
     expect(calls).toEqual(['replace', 'play', 'replace', 'play']);
   });
 });

@@ -1,9 +1,15 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 import { highlightFile, sourceFiles } from '../../build/example-sources.ts';
 import { EXAMPLE_APPS } from './registry.ts';
+import { highlight } from '../../build/markdown.ts';
+
+// Load the grammars before the tests compare highlighted output.
+beforeAll(async () => {
+  await highlight('const value = 1;', 'ts');
+}, 30_000);
 
 const documentation = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
 const workspace = path.resolve(documentation, '../..');

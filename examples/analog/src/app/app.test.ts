@@ -23,6 +23,9 @@ import { appConfig } from './app.config.ts';
 import { EPISODES } from './data/podcasts.ts';
 import { MarkdownPage } from './ui/markdown-page.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 // The same pages and content files, found by Vite rather than by Metro's require.context. The
 // ngNative() plugin makes each .md file the module Metro makes of it.
 vi.mock('./pages.ts', () => ({
@@ -67,7 +70,7 @@ async function start(extra: { providers?: Provider[] } = {}) {
     ...appConfig,
     providers: [...appConfig.providers, ...(extra.providers ?? [])],
   });
-  await screen.findByText('Analog Showroom', { exact: false });
+  await screen.findByText('Analog Showroom', { exact: false }, asyncWait);
   return { fabric, router: componentRef.injector.get(Router) };
 }
 
@@ -80,15 +83,18 @@ async function launch(url: string) {
     ],
   });
   const router = componentRef.injector.get(Router);
-  await waitFor(() => expect(router.url).toBe(url));
+  await waitFor(() => expect(router.url).toBe(url), asyncWait);
   return { fabric, router };
 }
 
 /** Opens a feature from the home page, and waits for its page. */
 async function openFeature(fabric: FakeFabric, router: Router, name: string, url: string) {
   await userEvent.press(screen.getByRole('button', { name }));
-  await waitFor(() => expect(router.url).toBe(url));
-  await waitFor(() => expect(front(fabric).getAllByText(/^src\/app\/pages\//)).toHaveLength(1));
+  await waitFor(() => expect(router.url).toBe(url), asyncWait);
+  await waitFor(
+    () => expect(front(fabric).getAllByText(/^src\/app\/pages\//)).toHaveLength(1),
+    asyncWait,
+  );
 }
 
 afterEach(() => cleanup());
@@ -132,15 +138,15 @@ test('a layout holds its pages on a stack of its own, in a sheet', async () => {
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Drift chair' }));
 
-  await waitFor(() => expect(router.url).toBe('/products/drift-chair'));
+  await waitFor(() => expect(router.url).toBe('/products/drift-chair'), asyncWait);
   expect(titles(fabric)).toEqual(['Analog Showroom', 'Products', 'Product']);
   expect(shown(fabric, 'productId')).toEqual(['drift-chair']);
   expect(front(fabric).getByText('Drift chair')).toBeTruthy();
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Done' }));
 
-  await waitFor(() => expect(router.url).toBe('/'));
-  await waitFor(() => expect(nodes(fabric, 'RNSScreenStack')).toHaveLength(1));
+  await waitFor(() => expect(router.url).toBe('/'), asyncWait);
+  await waitFor(() => expect(nodes(fabric, 'RNSScreenStack')).toHaveLength(1), asyncWait);
 });
 
 test('the products sheet closes with Done on its list', async () => {
@@ -149,20 +155,20 @@ test('the products sheet closes with Done on its list', async () => {
   await openFeature(fabric, router, 'Nested layout', '/products');
   await userEvent.press(front(fabric).getByRole('button', { name: 'Done' }));
 
-  await waitFor(() => expect(router.url).toBe('/'));
-  await waitFor(() => expect(nodes(fabric, 'RNSScreenStack')).toHaveLength(1));
+  await waitFor(() => expect(router.url).toBe('/'), asyncWait);
+  await waitFor(() => expect(nodes(fabric, 'RNSScreenStack')).toHaveLength(1), asyncWait);
 });
 
 test('a product a link launched the app on closes with Done', async () => {
   const { fabric, router } = await launch('/products/aurora-lamp');
 
-  await waitFor(() => expect(shown(fabric, 'productId')).toEqual(['aurora-lamp']));
+  await waitFor(() => expect(shown(fabric, 'productId')).toEqual(['aurora-lamp']), asyncWait);
   expect(front(fabric).getByText('Aurora lamp')).toBeTruthy();
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Done' }));
 
-  await waitFor(() => expect(router.url).toBe('/'));
-  await waitFor(() => expect(titles(fabric)).toEqual(['Analog Showroom']));
+  await waitFor(() => expect(router.url).toBe('/'), asyncWait);
+  await waitFor(() => expect(titles(fabric)).toEqual(['Analog Showroom']), asyncWait);
 });
 
 test('a catch-all page catches every segment after /docs', async () => {
@@ -174,9 +180,10 @@ test('a catch-all page catches every segment after /docs', async () => {
 
   await userEvent.press(front(fabric).getByRole('button', { name: '/docs/guides/layouts/nested' }));
 
-  await waitFor(() => expect(router.url).toBe('/docs/guides/layouts/nested'));
-  await waitFor(() =>
-    expect(shown(fabric, 'CAUGHT SEGMENTS')).toEqual(['guides', 'layouts', 'nested']),
+  await waitFor(() => expect(router.url).toBe('/docs/guides/layouts/nested'), asyncWait);
+  await waitFor(
+    () => expect(shown(fabric, 'CAUGHT SEGMENTS')).toEqual(['guides', 'layouts', 'nested']),
+    asyncWait,
   );
 });
 
@@ -189,7 +196,7 @@ test('the pages of a route group are at URLs without the group in them', async (
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Settings' }));
 
-  await waitFor(() => expect(router.url).toBe('/settings'));
+  await waitFor(() => expect(router.url).toBe('/settings'), asyncWait);
   expect(shown(fabric, 'URL')).toEqual(['/settings']);
 });
 
@@ -221,19 +228,27 @@ test('routeMeta.canActivate lets the admin page in only while Admin access is on
   expect(screen.queryByText('Let in')).toBeNull();
 
   await router.navigateByUrl('/settings');
-  await fireEvent(await screen.findByRole('switch', { name: 'Admin access' }), 'change', {
-    value: true,
-  });
+  await fireEvent(
+    await screen.findByRole('switch', { name: 'Admin access' }, asyncWait),
+    'change',
+    {
+      value: true,
+    },
+  );
   expect(await router.navigateByUrl('/admin')).toBe(true);
 
   expect(router.url).toBe('/admin');
-  expect(await screen.findByText('Let in')).toBeTruthy();
+  expect(await screen.findByText('Let in', undefined, asyncWait)).toBeTruthy();
   expect(titles(fabric).at(-1)).toBe('Admin');
 
   await router.navigateByUrl('/settings');
-  await fireEvent(await screen.findByRole('switch', { name: 'Admin access' }), 'change', {
-    value: false,
-  });
+  await fireEvent(
+    await screen.findByRole('switch', { name: 'Admin access' }, asyncWait),
+    'change',
+    {
+      value: false,
+    },
+  );
   expect(await router.navigateByUrl('/admin')).toBe(false);
   expect(router.url).toBe('/settings');
 });
@@ -264,8 +279,8 @@ test('a page reads its query parameters, and follows them as they change', async
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Search for layouts' }));
 
-  await waitFor(() => expect(router.url).toBe('/search?q=layouts'));
-  await waitFor(() => expect(shown(fabric, 'Q')).toEqual(['layouts']));
+  await waitFor(() => expect(router.url).toBe('/search?q=layouts'), asyncWait);
+  await waitFor(() => expect(shown(fabric, 'Q')).toEqual(['layouts']), asyncWait);
 });
 
 test('a tab layout keeps each tab as it was left while the other is in front', async () => {
@@ -278,17 +293,17 @@ test('a tab layout keeps each tab as it was left while the other is in front', a
   expect(selectedTab(fabric)).toBe('/');
   await userEvent.press(screen.getByRole('button', { name: 'Add to COUNTER' }));
   await userEvent.press(screen.getByRole('button', { name: 'Add to COUNTER' }));
-  await waitFor(() => expect(shown(fabric, 'COUNTER')).toEqual(['2']));
+  await waitFor(() => expect(shown(fabric, 'COUNTER')).toEqual(['2']), asyncWait);
 
   await router.navigateByUrl('/tabs/laps');
 
-  await waitFor(() => expect(selectedTab(fabric)).toBe('laps'));
-  await userEvent.press(await screen.findByRole('button', { name: 'Add to LAPS' }));
-  await waitFor(() => expect(shown(fabric, 'LAPS')).toEqual(['1']));
+  await waitFor(() => expect(selectedTab(fabric)).toBe('laps'), asyncWait);
+  await userEvent.press(await screen.findByRole('button', { name: 'Add to LAPS' }, asyncWait));
+  await waitFor(() => expect(shown(fabric, 'LAPS')).toEqual(['1']), asyncWait);
 
   await router.navigateByUrl('/tabs');
 
-  await waitFor(() => expect(selectedTab(fabric)).toBe('/'));
+  await waitFor(() => expect(selectedTab(fabric)).toBe('/'), asyncWait);
   expect(router.url).toBe('/tabs');
   expect(shown(fabric, 'COUNTER')).toEqual(['2']);
   expect(shown(fabric, 'LAPS')).toEqual(['1']);
@@ -306,7 +321,7 @@ test('a Markdown page draws its document natively and routes its relative links'
 
   await fireEvent.press(page.getByRole('link', { name: 'a link to the About page' }));
 
-  await waitFor(() => expect(router.url).toBe('/about'));
+  await waitFor(() => expect(router.url).toBe('/about'), asyncWait);
   expect(titles(fabric)).toEqual(['Analog Showroom', 'Markdown', 'About']);
 });
 
@@ -323,13 +338,14 @@ test('the native components page plans a trip from real controls, and books it',
     value: true,
   });
 
-  await waitFor(() =>
-    expect(page().getByText('Kam + 2 to Kyoto, window seat, insured')).toBeTruthy(),
+  await waitFor(
+    () => expect(page().getByText('Kam + 2 to Kyoto, window seat, insured')).toBeTruthy(),
+    asyncWait,
   );
   expect(page().getByText('100% ready')).toBeTruthy();
 
   await userEvent.press(page().getByRole('button', { name: 'Book trip' }));
-  expect(await screen.findByText('Booked')).toBeTruthy();
+  expect(await screen.findByText('Booked', undefined, asyncWait)).toBeTruthy();
 });
 
 test('the second components page recycles, sections, searches and swipes a podcast library', async () => {
@@ -354,55 +370,60 @@ test('the second components page recycles, sections, searches and swipes a podca
     expect(page().getByText('Signal Hour', { exact: false })).toBeTruthy();
 
     fabric.emit(list(), 'topLayout', { layout: { height: 700 } });
-    await waitFor(() =>
-      expect(page().getByRole('button', { name: label(EPISODES[0]!) })).toBeTruthy(),
+    await waitFor(
+      () => expect(page().getByRole('button', { name: label(EPISODES[0]!) })).toBeTruthy(),
+      asyncWait,
     );
     const first = episodeRows();
     expect(first.length).toBeLessThan(30);
 
     fabric.emit(list(), 'topScroll', { contentOffset: { y: 200 * 76 } });
-    await waitFor(() =>
-      expect(page().getByRole('button', { name: label(EPISODES[200]!) })).toBeTruthy(),
+    await waitFor(
+      () => expect(page().getByRole('button', { name: label(EPISODES[200]!) })).toBeTruthy(),
+      asyncWait,
     );
     expect(page().queryByRole('button', { name: label(EPISODES[0]!) })).toBeNull();
     const tags = new Set(first.map((row) => row.reactTag));
     expect(episodeRows().filter((row) => tags.has(row.reactTag)).length).toBeGreaterThan(0);
 
     fabric.emit(list(), 'topScroll', { contentOffset: { y: 0 } });
-    const card = await waitFor(() => page().getByLabelText('Up next'));
+    const card = await waitFor(() => page().getByLabelText('Up next'), asyncWait);
     const pan = gestureOf(card, 'Pan').callbacks as Record<string, (event: object) => void>;
     pan['onUpdate']!({ translationX: 60 });
-    await waitFor(() =>
-      expect(
-        (page().getByLabelText('Up next').props['transform'] as [{ translateX: number }])[0]
-          .translateX,
-      ).toBe(60),
+    await waitFor(
+      () =>
+        expect(
+          (page().getByLabelText('Up next').props['transform'] as [{ translateX: number }])[0]
+            .translateX,
+        ).toBe(60),
+      asyncWait,
     );
     pan['onEnd']!({ translationX: 160, velocityX: 0 });
-    await waitFor(() => expect(page().getByText('1 saved for later')).toBeTruthy());
+    await waitFor(() => expect(page().getByText('1 saved for later')).toBeTruthy(), asyncWait);
     expect(within(page().getByLabelText('Up next')).getByText(EPISODES[2]!.title)).toBeTruthy();
 
     await userEvent.press(page().getByRole('tab', { name: 'Shows' }));
-    expect(await screen.findByRole('header', { name: 'A' })).toBeTruthy();
+    expect(await screen.findByRole('header', { name: 'A' }, asyncWait)).toBeTruthy();
     const shows = () =>
       flatten([nodes(fabric, 'RNSScreen').at(-1)!]).find((node) => node.viewName === 'ScrollView')!;
     fabric.emit(shows(), 'topLayout', { layout: { height: 600 } });
     fabric.emit(shows(), 'topScroll', { contentOffset: { y: 200 } });
-    await waitFor(() =>
-      expect(page().getByRole('header', { name: 'B' }).parent!.props['zIndex']).toBe(1),
+    await waitFor(
+      () => expect(page().getByRole('header', { name: 'B' }).parent!.props['zIndex']).toBe(1),
+      asyncWait,
     );
 
     await userEvent.press(page().getByRole('button', { name: 'Follow After Hours' }));
-    await waitFor(() => expect(page().getByText('Following 2 shows')).toBeTruthy());
+    await waitFor(() => expect(page().getByText('Following 2 shows')).toBeTruthy(), asyncWait);
 
     await userEvent.type(page().getByLabelText('Search'), 'night');
-    await waitFor(() => expect(page().queryByRole('header', { name: 'A' })).toBeNull());
+    await waitFor(() => expect(page().queryByRole('header', { name: 'A' })).toBeNull(), asyncWait);
     expect(page().getByText('Night Shift')).toBeTruthy();
 
     await userEvent.press(page().getByRole('tab', { name: 'Episodes' }));
-    await waitFor(() => expect(page().getByText(/^\d+ RESULTS$/)).toBeTruthy());
+    await waitFor(() => expect(page().getByText(/^\d+ RESULTS$/)).toBeTruthy(), asyncWait);
     fabric.emit(list(), 'topLayout', { layout: { height: 700 } });
-    await waitFor(() => expect(episodeRows().length).toBeGreaterThan(0));
+    await waitFor(() => expect(episodeRows().length).toBeGreaterThan(0), asyncWait);
     for (const row of episodeRows()) {
       const episode = EPISODES.find((each) => label(each) === row.props['accessibilityLabel'])!;
       expect(`${episode.title} ${episode.show.name}`.toLowerCase()).toContain('night');
@@ -421,10 +442,10 @@ test('styled Markdown swaps the classes of one document for each look', async ()
   expect(heading().props['className'] ?? '').not.toContain('editorial-h1');
 
   await userEvent.press(front(fabric).getByRole('tab', { name: 'Editorial' }));
-  await waitFor(() => expect(JSON.stringify(heading().props)).toContain('Georgia'));
+  await waitFor(() => expect(JSON.stringify(heading().props)).toContain('Georgia'), asyncWait);
 
   await userEvent.press(front(fabric).getByRole('tab', { name: 'Terminal' }));
-  await waitFor(() => expect(JSON.stringify(heading().props)).toContain('Menlo'));
+  await waitFor(() => expect(JSON.stringify(heading().props)).toContain('Menlo'), asyncWait);
 });
 
 test('the Markdown editor toolbar adds Markdown, and Clear empties the document', async () => {
@@ -433,10 +454,16 @@ test('the Markdown editor toolbar adds Markdown, and Clear empties the document'
   await openFeature(fabric, router, 'Markdown editor', '/editor');
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Heading' }));
-  await waitFor(() => expect(front(fabric).getByRole('header', { name: 'Heading' })).toBeTruthy());
+  await waitFor(
+    () => expect(front(fabric).getByRole('header', { name: 'Heading' })).toBeTruthy(),
+    asyncWait,
+  );
 
   await userEvent.press(front(fabric).getByRole('button', { name: 'Clear' }));
-  await waitFor(() => expect(front(fabric).queryByRole('header', { name: 'Try it' })).toBeNull());
+  await waitFor(
+    () => expect(front(fabric).queryByRole('header', { name: 'Try it' })).toBeNull(),
+    asyncWait,
+  );
 });
 
 test('the Markdown editor fills in a sample document', async () => {
@@ -445,8 +472,9 @@ test('the Markdown editor fills in a sample document', async () => {
   await openFeature(fabric, router, 'Markdown editor', '/editor');
   await userEvent.press(front(fabric).getByRole('button', { name: 'Sample' }));
 
-  await waitFor(() =>
-    expect(front(fabric).getByRole('header', { name: 'Hello from Analog 👋' })).toBeTruthy(),
+  await waitFor(
+    () => expect(front(fabric).getByRole('header', { name: 'Hello from Analog 👋' })).toBeTruthy(),
+    asyncWait,
   );
 });
 
@@ -467,8 +495,9 @@ test('the Markdown editor pastes Markdown from the clipboard', async () => {
   await openFeature(fabric, router, 'Markdown editor', '/editor');
   await userEvent.press(front(fabric).getByRole('button', { name: 'Paste' }));
 
-  await waitFor(() =>
-    expect(front(fabric).getByRole('header', { name: 'Pasted heading' })).toBeTruthy(),
+  await waitFor(
+    () => expect(front(fabric).getByRole('header', { name: 'Pasted heading' })).toBeTruthy(),
+    asyncWait,
   );
 });
 
@@ -482,8 +511,9 @@ test('the Markdown editor draws what is typed as it is typed', async () => {
 
   await userEvent.type(page.getByLabelText('Markdown source'), '\n\n# Typed on the device');
 
-  await waitFor(() =>
-    expect(front(fabric).getByRole('header', { name: 'Typed on the device' })).toBeTruthy(),
+  await waitFor(
+    () => expect(front(fabric).getByRole('header', { name: 'Typed on the device' })).toBeTruthy(),
+    asyncWait,
   );
 });
 
@@ -513,25 +543,27 @@ test('a post is found by its slug and drawn from the tokens Metro lexed', async 
     front(fabric).getByRole('button', { name: 'File routes on a native stack' }),
   );
 
-  await waitFor(() => expect(router.url).toBe('/blog/native-file-routes'));
-  await waitFor(() =>
-    expect(front(fabric).getByRole('header', { name: 'What you get' })).toBeTruthy(),
+  await waitFor(() => expect(router.url).toBe('/blog/native-file-routes'), asyncWait);
+  await waitFor(
+    () => expect(front(fabric).getByRole('header', { name: 'What you get' })).toBeTruthy(),
+    asyncWait,
   );
   expect(titles(fabric)).toEqual(['Analog Showroom', 'Blog', 'File routes on a native stack']);
   expect(front(fabric).getByText('The Angular Native team · September 12, 2026')).toBeTruthy();
 
   await fireEvent.press(front(fabric).getByRole('link', { name: 'other post' }));
 
-  await waitFor(() => expect(router.url).toBe('/blog/markdown-without-a-parser'));
-  await waitFor(() =>
-    expect(titles(fabric).at(-1)).toBe('Markdown without a parser on the device'),
+  await waitFor(() => expect(router.url).toBe('/blog/markdown-without-a-parser'), asyncWait);
+  await waitFor(
+    () => expect(titles(fabric).at(-1)).toBe('Markdown without a parser on the device'),
+    asyncWait,
   );
 });
 
 test('a post that is not there shows the fallback, as in Analog', async () => {
   const { fabric } = await launch('/blog/no-such-post');
 
-  await waitFor(() => expect(front(fabric).getByText('No Content Found')).toBeTruthy());
+  await waitFor(() => expect(front(fabric).getByText('No Content Found')).toBeTruthy(), asyncWait);
   expect(titles(fabric).at(-1)).toBe('Post');
 });
 
@@ -548,7 +580,7 @@ test('a .md file in pages/ is a page, titled by its front matter', async () => {
 
   await fireEvent.press(front(fabric).getByRole('link', { name: 'the blog' }));
 
-  await waitFor(() => expect(router.url).toBe('/blog'));
+  await waitFor(() => expect(router.url).toBe('/blog'), asyncWait);
   expect(titles(fabric)).toEqual(['Analog Showroom', 'Colophon', 'Blog']);
 });
 
@@ -564,7 +596,10 @@ test("one markdownPage component draws a .md page under the router's fileRoutes 
     });
     await componentRef.injector.get(Router).navigateByUrl('/colophon');
 
-    await waitFor(() => expect(front(fabric).getByText('src/app/pages/colophon.md')).toBeTruthy());
+    await waitFor(
+      () => expect(front(fabric).getByText('src/app/pages/colophon.md')).toBeTruthy(),
+      asyncWait,
+    );
     expect(
       front(fabric).getByRole('header', { name: 'A page that is a Markdown file' }),
     ).toBeTruthy();

@@ -67,6 +67,31 @@ jobs:
           path: .nx/cache
           key: nx-${{ runner.os }}-${{ github.sha }}
 
+  # Cold test runs compile lazy screens, so they have their own time budget beside `verify`.
+  tests:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup
+
+      - uses: nrwl/nx-set-shas@v5
+
+      # Coverage runs the integration and web suites. The remaining test targets include the
+      # generators, docs, examples, template, and testing's own Vitest runner checks.
+      - name: Test the remaining projects that changed
+        run: pnpm nx affected -t test --exclude=@ng-native/integration-tests,@ng-native/web --parallel=2
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: .nx/cache
+          key: nx-${{ runner.os }}-${{ github.sha }}-tests
+
   # Every suite with the coverage floor: most of CI's time, so a job of its own beside `verify`.
   coverage:
     if: github.event.pull_request.draft != true

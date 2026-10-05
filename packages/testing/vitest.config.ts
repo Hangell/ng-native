@@ -7,5 +7,5 @@ import { ngNative } from './runner/vitest.mjs';
 
 export default defineConfig({
   plugins: [ngNative()],
-  test: { include: ['src/**/*.vitest.test.ts'] },
+  test: { maxWorkers: 1, testTimeout: 30_000, include: ['src/**/*.vitest.test.ts'] },
 });

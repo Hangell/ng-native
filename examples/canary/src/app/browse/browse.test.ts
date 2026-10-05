@@ -14,6 +14,9 @@ import { describe, expect, test } from 'vitest';
 import { App } from '../app.ts';
 import { routes } from '../app.routes.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const flatten = (nodes: readonly FakeFabricNode[]): FakeFabricNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
@@ -50,7 +53,10 @@ async function boot() {
   });
   const nav = app.componentRef.injector.get(NativeNavigation);
   await nav.push('/browse');
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Jump to Jazz' })).toBeTruthy());
+  await waitFor(
+    () => expect(screen.getByRole('button', { name: 'Jump to Jazz' })).toBeTruthy(),
+    asyncWait,
+  );
   // The page's list is the newest vertical scroll view; the home screen's is below it.
   const page = () =>
     scrollViews(app.fabric)
@@ -138,7 +144,7 @@ describe('browse', () => {
     await scrollTo(page(), { y: jump.args[1] as number });
     await settle();
     expect(screen.getAllByText('Vocal').length).toBeGreaterThan(0);
-    await userEvent.press(await screen.findByRole('button', { name: 'Top' }));
+    await userEvent.press(await screen.findByRole('button', { name: 'Top' }, asyncWait));
     expect(pageMoves().at(-1)!.args[1]).toBe(0);
   });
 
@@ -173,7 +179,7 @@ describe('browse', () => {
   test('opens an album and comes back to the shelves as they were', async () => {
     const { nav, router, fabric } = await boot();
     await userEvent.press(screen.getByRole('button', { name: 'Jazz 1' }));
-    await waitFor(() => expect(router.url).toBe('/search-demo/g0a0'));
+    await waitFor(() => expect(router.url).toBe('/search-demo/g0a0'), asyncWait);
     nav.back();
     for (let turn = 0; turn < 6; turn++) await settle();
     expect(router.url).toBe('/browse');

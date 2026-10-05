@@ -6,6 +6,9 @@ import { FakeNotesApi, NOTES_API } from './api/notes-api.ts';
 import { App } from './app.ts';
 import { appConfig } from './app.config.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 /** A `Network.SOURCE` a test can flip between offline and online. */
 function controllableNetwork(initial: NetworkStatus) {
   let current = initial;
@@ -43,19 +46,19 @@ test('creates a note offline, and it syncs once back online', async () => {
   const network = controllableNetwork({ connected: false, type: 'none', reachable: false });
   const { componentRef } = await start(network.source);
 
-  expect(await screen.findByText('Offline')).toBeTruthy();
+  expect(await screen.findByText('Offline', undefined, asyncWait)).toBeTruthy();
 
-  await userEvent.press(await screen.findByRole('button', { name: 'New note' }));
+  await userEvent.press(await screen.findByRole('button', { name: 'New note' }, asyncWait));
 
   const user = userEvent.setup();
-  await user.type(await screen.findByLabelText('Title'), 'Groceries');
+  await user.type(await screen.findByLabelText('Title', undefined, asyncWait), 'Groceries');
   await user.type(screen.getByLabelText('Note body'), 'Milk, eggs, bread');
   await settle(); // the autosave debounce
 
   componentRef.injector.get(NativeNavigation).back();
-  expect(await screen.findByText('Offline')).toBeTruthy();
-  expect(await screen.findByText('Groceries')).toBeTruthy();
+  expect(await screen.findByText('Offline', undefined, asyncWait)).toBeTruthy();
+  expect(await screen.findByText('Groceries', undefined, asyncWait)).toBeTruthy();
 
   network.goOnline();
-  expect(await screen.findByText('Synced')).toBeTruthy();
+  expect(await screen.findByText('Synced', undefined, asyncWait)).toBeTruthy();
 });

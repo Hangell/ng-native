@@ -7,6 +7,9 @@ import { App } from '../app.ts';
 import { routes } from '../app.routes.ts';
 import { ORDER_POLL_MS, OrdersApi } from './orders-api.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function boot() {
@@ -44,7 +47,7 @@ describe('orders', () => {
   test('shows the order the screen opened on', async () => {
     const { nav } = await boot();
     await nav.push('/orders/o1');
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
     expect(screen.getByText('Order o1, version 1')).toBeTruthy();
   });
 
@@ -54,7 +57,7 @@ describe('orders', () => {
     await nav.push('/orders/o1');
     await wait(40);
     await userEvent.press(screen.getByRole('button', { name: 'Next order' }));
-    await screen.findByText('Order o2, version 1');
+    await screen.findByText('Order o2, version 1', undefined, asyncWait);
     expect(api.aborted).toBeGreaterThanOrEqual(1);
     await wait(400);
     expect(screen.queryByText(/Order o1,/)).toBeNull();
@@ -64,16 +67,19 @@ describe('orders', () => {
   test('asks again while in front, and the order moves on', async () => {
     const { nav } = await boot();
     await nav.push('/orders/o3');
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
     await screen.findByText('Status: preparing', undefined, { timeout: 1500 });
   });
 
   test('stops asking while another screen is on top, and starts again when back', async () => {
     const { nav, api } = await boot();
     await nav.push('/orders/o4');
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
     await userEvent.press(screen.getByRole('button', { name: 'All orders' }));
-    await waitFor(() => expect(screen.getAllByText('Order o1').length).toBeGreaterThan(0));
+    await waitFor(
+      () => expect(screen.getAllByText('Order o1').length).toBeGreaterThan(0),
+      asyncWait,
+    );
     await wait(60);
     const covered = api.requests;
     await wait(400);
@@ -86,7 +92,7 @@ describe('orders', () => {
   test('stops asking while the app is in the background', async () => {
     const { nav, api, goTo } = await boot();
     await nav.push('/orders/o5');
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
     goTo('background');
     await settle();
     await wait(60);
@@ -103,7 +109,7 @@ describe('orders', () => {
     await nav.push('/orders/o6');
     await wait(40);
     nav.back();
-    await waitFor(() => expect(router.url).toBe('/'));
+    await waitFor(() => expect(router.url).toBe('/'), asyncWait);
     for (let turn = 0; turn < 4; turn++) await settle();
     expect(api.aborted).toBeGreaterThanOrEqual(1);
     const after = api.requests;
@@ -122,7 +128,7 @@ describe('orders', () => {
   test('cancels once however often tapped, and a poll already on its way cannot undo it', async () => {
     const { nav, api } = await boot();
     await nav.push('/orders/o7');
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
     // A slow poll leaves before the cancel and lands after it, with the status it was asked for.
     api.slow.set('o7', 250);
     await wait(100);
@@ -147,9 +153,9 @@ describe('orders', () => {
     const { nav, api } = await boot();
     api.failing = true;
     await nav.push('/orders/o8');
-    await screen.findByText('The order could not be loaded.');
+    await screen.findByText('The order could not be loaded.', undefined, asyncWait);
     api.failing = false;
     await userEvent.press(screen.getByRole('button', { name: 'Try again' }));
-    await screen.findByText('Status: placed');
+    await screen.findByText('Status: placed', undefined, asyncWait);
   });
 });

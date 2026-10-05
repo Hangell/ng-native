@@ -5,5 +5,6 @@ import { defineConfig } from 'vitest/config';
 // a fake of the native side: no simulator, no device. `@analogjs/router` ships partial-compiled
 // code, which has to come through the plugin to be linked.
 export default defineConfig({
+  test: { maxWorkers: 1, testTimeout: 30_000 },
   plugins: [ngNative({ inline: [/\/node_modules\/@analogjs\//] })],
 });

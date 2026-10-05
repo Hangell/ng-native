@@ -13,6 +13,9 @@ import { describe, expect, test } from 'vitest';
 import { App } from '../app.ts';
 import { routes } from '../app.routes.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const flatten = (nodes: readonly FakeFabricNode[]): FakeFabricNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 const screens = (fabric: FakeFabric) =>
@@ -31,11 +34,14 @@ async function boot() {
 }
 
 async function signIn(password = 'correct horse', code = '123456') {
-  await userEvent.type(await screen.findByLabelText('Email'), 'ada@example.com');
+  await userEvent.type(
+    await screen.findByLabelText('Email', undefined, asyncWait),
+    'ada@example.com',
+  );
   await userEvent.type(screen.getByLabelText('Password'), password);
   await userEvent.press(screen.getByRole('button', { name: 'Sign in' }));
   if (password !== 'correct horse') return;
-  await userEvent.type(await screen.findByLabelText('Code'), code);
+  await userEvent.type(await screen.findByLabelText('Code', undefined, asyncWait), code);
   await userEvent.press(screen.getByRole('button', { name: 'Continue' }));
 }
 
@@ -43,9 +49,9 @@ describe('authentication', () => {
   test('a signed-in screen asks to sign in first, then replaces sign-in with it', async () => {
     const { nav, router, fabric } = await boot();
     await nav.push('/account');
-    await waitFor(() => expect(router.url).toBe('/auth/login'));
+    await waitFor(() => expect(router.url).toBe('/auth/login'), asyncWait);
     await signIn();
-    await screen.findByText('Signed in as ada@example.com');
+    await screen.findByText('Signed in as ada@example.com', undefined, asyncWait);
     expect(router.url).toBe('/account');
     await idle();
     // Nothing to go back to: not the code, not sign-in, not the screen before.
@@ -59,18 +65,18 @@ describe('authentication', () => {
     const { nav } = await boot();
     await nav.push('/auth/login');
     await signIn('nope');
-    await screen.findByText('That password is not right.');
-    await userEvent.press(await screen.findByRole('button', { name: 'Sign in' }));
-    await screen.findByText('That password is not right.');
-    await userEvent.press(await screen.findByRole('button', { name: 'Sign in' }));
-    await screen.findByText('Too many attempts. Try again later.');
+    await screen.findByText('That password is not right.', undefined, asyncWait);
+    await userEvent.press(await screen.findByRole('button', { name: 'Sign in' }, asyncWait));
+    await screen.findByText('That password is not right.', undefined, asyncWait);
+    await userEvent.press(await screen.findByRole('button', { name: 'Sign in' }, asyncWait));
+    await screen.findByText('Too many attempts. Try again later.', undefined, asyncWait);
   });
 
   test('a wrong code keeps the user on the code screen', async () => {
     const { nav, router } = await boot();
     await nav.push('/auth/login');
     await signIn('correct horse', '000000');
-    await screen.findByText('That code is not right.');
+    await screen.findByText('That code is not right.', undefined, asyncWait);
     expect(router.url).toBe('/auth/code');
   });
 
@@ -78,10 +84,12 @@ describe('authentication', () => {
     const { nav, router, fabric } = await boot();
     await nav.push('/account');
     await signIn();
-    await screen.findByText('Signed in as ada@example.com');
+    await screen.findByText('Signed in as ada@example.com', undefined, asyncWait);
     await userEvent.press(screen.getByRole('button', { name: 'Settings' }));
-    await userEvent.press(await screen.findByRole('button', { name: 'Let the session expire' }));
-    await waitFor(() => expect(router.url).toBe('/auth/login'));
+    await userEvent.press(
+      await screen.findByRole('button', { name: 'Let the session expire' }, asyncWait),
+    );
+    await waitFor(() => expect(router.url).toBe('/auth/login'), asyncWait);
     await idle();
     expect(screens(fabric)).toHaveLength(1);
     expect(screen.getByText('Your session has expired. Sign in again.')).toBeTruthy();
@@ -92,15 +100,15 @@ describe('authentication', () => {
     const { nav, router, fabric } = await boot();
     await nav.push('/account');
     await signIn();
-    await userEvent.press(await screen.findByRole('button', { name: 'Orders' }));
-    await waitFor(() => expect(router.url).toBe('/account/orders'));
+    await userEvent.press(await screen.findByRole('button', { name: 'Orders' }, asyncWait));
+    await waitFor(() => expect(router.url).toBe('/account/orders'), asyncWait);
     nav.back();
-    await waitFor(() => expect(router.url).toBe('/account'));
+    await waitFor(() => expect(router.url).toBe('/account'), asyncWait);
     await userEvent.press(screen.getByRole('button', { name: 'Sign out' }));
-    await waitFor(() => expect(router.url).toBe('/auth/login'));
+    await waitFor(() => expect(router.url).toBe('/auth/login'), asyncWait);
     await idle();
     expect(screens(fabric)).toHaveLength(1);
     await nav.push('/account/orders');
-    await waitFor(() => expect(router.url).toBe('/auth/login'));
+    await waitFor(() => expect(router.url).toBe('/auth/login'), asyncWait);
   });
 });

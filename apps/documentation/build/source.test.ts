@@ -1,8 +1,13 @@
 import path from 'node:path';
 import url from 'node:url';
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 import { highlight } from './markdown.ts';
 import { source } from './source.ts';
+
+// Load the grammars before the tests compare highlighted output.
+beforeAll(async () => {
+  await highlight('const value = 1;', 'ts');
+}, 30_000);
 
 type Load = (id: string) => Promise<string>;
 

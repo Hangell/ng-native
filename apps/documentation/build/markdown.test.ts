@@ -1,5 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 import { highlight, markdown } from './markdown.ts';
+
+// Load the grammars before the tests compare highlighted output.
+beforeAll(async () => {
+  await highlight('const value = 1;', 'ts');
+}, 30_000);
 
 type Transform = (code: string, id: string) => Promise<{ code: string }>;
 

@@ -17,6 +17,9 @@ import { routes } from '../app.routes.ts';
 import { ProjectServer, ProjectStore } from './project-data.ts';
 import { projectLinkParent } from './project-links.ts';
 
+// Lazy screen imports are compiled on first navigation under Vitest.
+const asyncWait = { timeout: 10_000 };
+
 const flatten = (nodes: readonly FakeFabricNode[]): FakeFabricNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
@@ -110,7 +113,7 @@ describe('task manager', () => {
     await nav.push('/projects/p1/tasks/t2');
     await idle();
     await userEvent.press(screen.getByRole('button', { name: 'Edit' }));
-    const title = await screen.findByLabelText('Title');
+    const title = await screen.findByLabelText('Title', undefined, asyncWait);
     await userEvent.clear(title);
     await userEvent.type(title, 'Ship the beta');
     await userEvent.press(screen.getByRole('button', { name: 'Save' }));
@@ -124,7 +127,7 @@ describe('task manager', () => {
     await nav.push('/projects/p1/tasks/t2');
     await idle();
     await userEvent.press(screen.getByRole('button', { name: 'Edit' }));
-    await screen.findByLabelText('Title');
+    await screen.findByLabelText('Title', undefined, asyncWait);
     const sheet = () => screens(fabric).at(-1)!;
     expect(sheet().props['preventNativeDismiss']).toBe(false);
     await userEvent.type(screen.getByLabelText('Title'), '!');
@@ -163,7 +166,7 @@ describe('task manager', () => {
     server.offline = true;
     store.toggleDone('t2');
     expect(store.task('t2')!.done).toBe(!done);
-    await waitFor(() => expect(store.task('t2')!.done).toBe(done));
+    await waitFor(() => expect(store.task('t2')!.done).toBe(done), asyncWait);
     expect(store.notice()).toBe('Could not save the task');
   });
 
