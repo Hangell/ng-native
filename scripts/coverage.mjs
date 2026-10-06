@@ -10,10 +10,8 @@
  * are `node --test` already, and a separate instrumenter would mean a second set of source maps
  * over TypeScript that Node is stripping itself.
  *
- * `packages/web/browser` is not merged in. It is nine tests in Vitest's browser mode, which would
- * need `@vitest/coverage-v8` and a third instrumenter to report at all, and what it covers is
- * `packages/web` - the package these two already put at the top of the table. The nine exist to
- * prove things a real browser does and jsdom fakes; that is not a coverage question.
+ * The browser suite uses Vitest's v8 coverage. All four reports must be complete before the
+ * merged result can be used, including when `--report` reads a previous run.
  *
  * Usage:
  *
@@ -22,13 +20,15 @@
  *   node scripts/coverage.mjs --min 70   # exit non-zero if total line coverage is under 70%
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import url from 'node:url';
 
 const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'coverage');
+const INCOMPLETE = path.join(OUT, '.incomplete');
+const SUMMARY = path.join(OUT, 'summary.json');
 
 /**
  * Everything that is shipped, and nothing that is not.
@@ -126,23 +126,100 @@ const SUITES = [
 function parseLcov(text, cwd) {
   const files = new Map();
   let current = null;
-  for (const line of text.split('\n')) {
+  let file;
+  for (const line of text.split(/\r?\n/)) {
     if (line.startsWith('SF:')) {
+      if (current) throw new Error('Unfinished LCOV record before SF.');
+      if (!line.slice(3).trim()) throw new Error('Empty LCOV source path.');
       // lcov paths are relative to the suite's own directory; the merge key has to be absolute.
-      const file = path.resolve(cwd, line.slice(3).trim());
-      current = files.get(file) ?? { lines: new Map(), branches: new Map() };
-      files.set(file, current);
-    } else if (line.startsWith('DA:') && current) {
-      const [number, hits] = line.slice(3).split(',').map(Number);
-      current.lines.set(number, (current.lines.get(number) ?? 0) + hits);
-    } else if (line.startsWith('BRDA:') && current) {
-      const [number, block, branch, hits] = line.slice(5).split(',');
-      const key = `${number}:${block}:${branch}`;
-      const taken = hits === '-' ? 0 : Number(hits);
-      current.branches.set(key, (current.branches.get(key) ?? 0) + taken);
+      // Process-private AOT copies differ only in import paths; their line and branch IDs match.
+      // Merge those measurements before comparing generated code with the original source.
+      file = path
+        .resolve(cwd, line.slice(3).trim())
+        .replace(/\.process-\d+(?=\.generated\.ts$)/, '');
+      current = { lines: new Map(), branches: new Map(), counts: new Map() };
+    } else if (line === 'end_of_record') {
+      if (!current) throw new Error('LCOV terminator outside a source record.');
+      validateRecord(current);
+      const held = files.get(file) ?? { lines: new Map(), branches: new Map() };
+      addHits(held.lines, current.lines);
+      addHits(held.branches, current.branches);
+      files.set(file, held);
+      current = null;
+    } else if (/^(DA|BRDA|LF|LH|BRF|BRH):/.test(line)) {
+      if (!current) throw new Error('LCOV coverage data outside a source record.');
+      readCoverageLine(line, current);
     }
   }
+  if (current) throw new Error('Unfinished LCOV record at end of report.');
+  if (![...files.values()].some((data) => data.lines.size > 0)) {
+    throw new Error('Empty coverage report: no measured lines.');
+  }
   return files;
+}
+
+function addHits(target, source) {
+  for (const [key, hits] of source) target.set(key, (target.get(key) ?? 0) + hits);
+}
+
+/** Only the fields used in the merge; function records and other LCOV metadata stay opaque. */
+function readCoverageLine(line, record) {
+  const [kind] = line.split(':');
+  const formats = {
+    DA: /^DA:([1-9]\d*),(\d+)(?:,[^,]*)?$/,
+    // Node's source maps can leave a branch without a source line; its block/id still identify it.
+    BRDA: /^BRDA:([1-9]\d*|undefined),(\d+),(\d+),(\d+|-)$/,
+  };
+  const match = (formats[kind] ?? /^(?:LF|LH|BRF|BRH):(\d+)$/).exec(line);
+  if (!match) throw new Error(`Invalid LCOV ${kind} data: ${line}`);
+  const numbers = match
+    .slice(1)
+    .filter((value) => value !== '-' && value !== 'undefined')
+    .map(Number);
+  if (numbers.some((value) => !Number.isSafeInteger(value))) {
+    throw new Error(`Invalid LCOV ${kind} number: ${line}`);
+  }
+  if (kind === 'DA') {
+    if (record.lines.has(numbers[0])) throw new Error('Duplicate LCOV DA line.');
+    record.lines.set(numbers[0], numbers[1]);
+  } else if (kind === 'BRDA') {
+    const key = match.slice(1, 4).join(':');
+    if (record.branches.has(key)) throw new Error('Duplicate LCOV BRDA branch.');
+    record.branches.set(key, match[4] === '-' ? 0 : Number(match[4]));
+  } else {
+    if (record.counts.has(kind)) throw new Error(`Duplicate LCOV ${kind} count.`);
+    record.counts.set(kind, numbers[0]);
+  }
+}
+
+function validateRecord({ lines, branches, counts }) {
+  const expected = {
+    LF: lines.size,
+    LH: [...lines.values()].filter((hits) => hits > 0).length,
+    BRF: branches.size,
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    // Both producers supply line totals; branch totals are optional in LCOV.
+    if ((name === 'LF' || name === 'LH' || counts.has(name)) && counts.get(name) !== value) {
+      throw new Error(`LCOV ${name} count does not match its coverage data.`);
+    }
+  }
+  // Node's source-mapped BRH can disagree with its BRDA hits. The merge uses those hits rather
+  // than this summary, so only its range can be checked across both producers.
+  if (counts.has('BRH') && counts.get('BRH') > branches.size) {
+    throw new Error('LCOV BRH count exceeds the number of branches.');
+  }
+}
+
+function readSuite(suite) {
+  const file = suite.report(OUT);
+  try {
+    return parseLcov(readFileSync(file, 'utf8'), path.join(ROOT, suite.cwd));
+  } catch (error) {
+    throw new Error(
+      `${suite.name} coverage report (${path.relative(ROOT, file)}): ${error.message}`,
+    );
+  }
 }
 
 /** The lines a file never ran, collapsed into ranges, because a list of 200 numbers is unreadable. */
@@ -162,6 +239,9 @@ function uncoveredRanges(lines) {
 
 function run() {
   mkdirSync(OUT, { recursive: true });
+  // Kept on failure or interruption, even when a failed producer wrote a complete LCOV file.
+  writeFileSync(INCOMPLETE, 'Coverage run incomplete. Rerun pnpm coverage.\n');
+  for (const suite of SUITES) rmSync(suite.report(OUT), { force: true });
   for (const suite of SUITES) {
     const started = Date.now();
     const result = spawnSync(suite.command, suite.args(suite.report(OUT)), {
@@ -175,6 +255,7 @@ function run() {
       console.error(`\n${suite.name} suite failed; coverage from a red suite is not worth having.`);
       process.exit(result.status ?? 1);
     }
+    readSuite(suite);
   }
 }
 
@@ -266,9 +347,7 @@ function printWorst(shipped) {
 function mergeSuites() {
   const totals = new Map();
   for (const suite of SUITES) {
-    const file = suite.report(OUT);
-    if (!existsSync(file)) continue;
-    for (const [name, data] of parseLcov(readFileSync(file, 'utf8'), path.join(ROOT, suite.cwd))) {
+    for (const [name, data] of readSuite(suite)) {
       const held = totals.get(name) ?? { lines: new Map(), branches: new Map() };
       for (const [number, hits] of data.lines) {
         held.lines.set(number, (held.lines.get(number) ?? 0) + hits);
@@ -334,15 +413,13 @@ function fold(measured) {
 
 function report(minimum) {
   const shipped = fold(filesIn(mergeSuites()));
+  const all = totals(shipped);
+  if (all.lines === 0) throw new Error('No shipped source lines were measured.');
   printPackages(shipped);
   printWorst(shipped);
 
-  const all = totals(shipped);
   const overall = ratio(all.covered, all.lines);
-  writeFileSync(
-    path.join(OUT, 'summary.json'),
-    `${JSON.stringify({ overall, files: shipped }, null, 2)}\n`,
-  );
+  writeFileSync(SUMMARY, `${JSON.stringify({ overall, files: shipped }, null, 2)}\n`);
   console.log(`\nDetail in ${path.relative(ROOT, path.join(OUT, 'summary.json'))}`);
 
   if (minimum !== undefined && overall < minimum) {
@@ -351,8 +428,30 @@ function report(minimum) {
   }
 }
 
-const args = process.argv.slice(2);
-const minimumAt = args.indexOf('--min');
-const minimum = minimumAt === -1 ? undefined : Number(args[minimumAt + 1]);
-if (!args.includes('--report')) run();
-report(minimum);
+function main() {
+  const args = process.argv.slice(2);
+  const minimumAt = args.indexOf('--min');
+  const raw = args[minimumAt + 1];
+  const minimum = minimumAt === -1 ? undefined : Number(raw);
+  if (
+    minimum !== undefined &&
+    (!raw?.trim() || !Number.isFinite(minimum) || minimum < 0 || minimum > 100)
+  ) {
+    throw new Error('--min must be a finite percentage between 0 and 100.');
+  }
+  rmSync(SUMMARY, { force: true });
+  if (args.includes('--report')) {
+    if (existsSync(INCOMPLETE)) throw new Error('Coverage run incomplete. Rerun pnpm coverage.');
+  } else {
+    run();
+  }
+  report(minimum);
+  rmSync(INCOMPLETE, { force: true });
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`\nCoverage failed: ${error.message}`);
+  process.exitCode = 1;
+}

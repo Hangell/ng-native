@@ -47,11 +47,8 @@ function rewriteImports(code: string, file: string, seen: Set<string>): string {
 /**
  * Write, then move into place.
  *
- * Test files run in parallel processes and every one of them compiles the primitives its fixtures
- * import, so several write the same `.generated.ts` at once. A plain write lets another process
- * import the file halfway through it, and the failure is a `SyntaxError` about a missing export
- * from a file that plainly has it. The content is a pure function of the source, so either
- * version is correct - what has to be atomic is only the swap.
+ * Each process owns its generated copies. Keep the swap atomic too, so an import never reads
+ * half a file when another fixture in this process compiles the same primitive.
  */
 function writeAtomically(out: string, code: string): void {
   const temporary = `${out}.${process.pid}.tmp`;
@@ -60,7 +57,9 @@ function writeAtomically(out: string, code: string): void {
 }
 
 function emit(file: string, seen: Set<string>): string {
-  const out = file.replace(/\.ts$/, '.generated.ts');
+  // Some filesystems expose a missing destination while replacing it. Parallel test processes
+  // must not overwrite a copy another process is resolving or importing.
+  const out = file.replace(/\.ts$/, `.process-${process.pid}.generated.ts`);
   if (seen.has(file)) return out;
   seen.add(file);
 
@@ -81,7 +80,7 @@ export async function compileFixture(file: string): Promise<Record<string, unkno
  * renders both ways renders the same component classes.
  */
 export async function compileFixtureForWeb(file: string): Promise<Record<string, unknown>> {
-  const out = file.replace(/\.ts$/, '.web.generated.ts');
+  const out = file.replace(/\.ts$/, `.web.process-${process.pid}.generated.ts`);
   const { code } = transformAngular(readFileSync(file, 'utf8'), file, { platform: 'web' });
   writeAtomically(out, rewriteImports(code, file, new Set()));
   return import(pathToFileURL(out).href);

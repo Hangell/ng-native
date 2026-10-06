@@ -320,6 +320,13 @@ describe('virtual list with measured rows', () => {
 
 describe('virtual list sticky rows moved on the native side', () => {
   const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
+  // Measuring rows can outlast the scroll pause on a slow runner. Keep Angular's zero-delay
+  // scheduling, but hold delayed callbacks while a test is asserting an ongoing scroll.
+  const holdDelayedTimers = () => {
+    const setTimeout_ = globalThis.setTimeout;
+    return mock.method(globalThis, 'setTimeout', ((callback: () => void, delay?: number) =>
+      delay ? undefined : setTimeout_(callback, delay)) as typeof setTimeout);
+  };
 
   it('leaves a pinned row at its own place and has native move it with the scroll', async () => {
     const { native, drives } = recorder();
@@ -329,35 +336,29 @@ describe('virtual list sticky rows moved on the native side', () => {
     instance.sticky!.set([0, 20]);
     await settle();
     await measureAll(() => ESTIMATE);
-    // The list commits the settled translate 64 ms after the last scroll event, and on a slow
-    // runner measuring alone takes that long. Delayed timers are held until the assertion;
-    // Angular's own zero-delay scheduling still runs.
-    const setTimeout_ = globalThis.setTimeout;
-    const held = mock.method(globalThis, 'setTimeout', ((callback: () => void, delay?: number) =>
-      delay ? undefined : setTimeout_(callback, delay)) as typeof setTimeout);
+    const held = holdDelayedTimers();
     try {
       await scroll(10 * ESTIMATE);
       await measureAll(() => ESTIMATE);
+      const pinned = row(0)!;
+      assert.equal(pinned.props['transform'], undefined, 'no translate from JavaScript mid-scroll');
+      assert.equal(pinned.props['zIndex'], 1);
+      assert.equal(canvas().children[0]!.props['height'], 0, 'the spacer stops where row 0 starts');
+      const first = canvas().children[2]!;
+      assert.equal(
+        first.props['marginTop'],
+        Number(String(first.props['nativeID']).slice(4)) * ESTIMATE - ESTIMATE,
+        'and the rows between it and the window are made up before the window',
+      );
+      assert.deepEqual(
+        drives().get(pinned.reactTag)?.inputRange,
+        [0, 19 * ESTIMATE],
+        'pinned from its own top until row 20 pushes it off',
+      );
     } finally {
       held.mock.restore();
+      unmount();
     }
-
-    const pinned = row(0)!;
-    assert.equal(pinned.props['transform'], undefined, 'no translate from JavaScript mid-scroll');
-    assert.equal(pinned.props['zIndex'], 1);
-    assert.equal(canvas().children[0]!.props['height'], 0, 'the spacer stops where row 0 starts');
-    const first = canvas().children[2]!;
-    assert.equal(
-      first.props['marginTop'],
-      Number(String(first.props['nativeID']).slice(4)) * ESTIMATE - ESTIMATE,
-      'and the rows between it and the window are made up before the window',
-    );
-    assert.deepEqual(
-      drives().get(pinned.reactTag)?.inputRange,
-      [0, 19 * ESTIMATE],
-      'pinned from its own top until row 20 pushes it off',
-    );
-    unmount();
   });
 
   it('leaves the pinned row s props alone as the window moves, so native keeps its translate', async () => {
@@ -370,13 +371,18 @@ describe('virtual list sticky rows moved on the native side', () => {
     instance.sticky!.set([0]);
     await settle();
     await measureAll(() => ESTIMATE);
-    await scroll(10 * ESTIMATE);
-    await measureAll(() => ESTIMATE);
-    const props = row(0)!.props;
-    await scroll(14 * ESTIMATE);
-    await measureAll(() => ESTIMATE);
-    assert.equal(row(0)!.props, props);
-    unmount();
+    const held = holdDelayedTimers();
+    try {
+      await scroll(10 * ESTIMATE);
+      await measureAll(() => ESTIMATE);
+      const props = row(0)!.props;
+      await scroll(14 * ESTIMATE);
+      await measureAll(() => ESTIMATE);
+      assert.equal(row(0)!.props, props);
+    } finally {
+      held.mock.restore();
+      unmount();
+    }
   });
 
   it('writes the settled translate once the scroll pauses, so the props agree with native', async () => {

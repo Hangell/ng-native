@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it } from 'node:test';
+import { measureCpu } from './measure-cpu.ts';
 
 const require = createRequire(import.meta.url);
 const { transformAngular } = require('@ng-native/metro/angular-transform.cjs');
@@ -91,11 +92,18 @@ describe("recognising an Angular DOM component: 'use dom' and mountInWebView", (
 
   it('answers at once for an ordinary file, however it starts', () => {
     // Every file in the app is asked. A backtracking pattern once hung the bundler on these.
-    const started = performance.now();
-    isAngularDomComponent(' \n'.repeat(50_000) + 'export const a = 1;');
-    isAngularDomComponent('/**\n' + ' * line\n'.repeat(50_000) + ' */\nexport const a = 1;');
-    isAngularDomComponent('/* never closed ' + ' '.repeat(50_000));
-    assert.ok(performance.now() - started < 200, 'linear, not exponential');
+    const inputs = [
+      ' \n'.repeat(50_000) + 'export const a = 1;',
+      '/**\n' + ' * line\n'.repeat(50_000) + ' */\nexport const a = 1;',
+      '/* never closed ' + ' '.repeat(50_000),
+    ];
+    for (const input of inputs) assert.equal(isAngularDomComponent(input), false);
+    const ms = measureCpu(
+      require.resolve('@ng-native/metro/dom-component.cjs'),
+      'for (const source of input) subject.isAngularDomComponent(source);',
+      inputs,
+    );
+    assert.ok(ms < 200, `linear, not exponential: took ${Math.round(ms)}ms of CPU`);
   });
 });
 

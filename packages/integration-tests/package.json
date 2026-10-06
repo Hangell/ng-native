@@ -16,7 +16,16 @@
     "tags": [
       "scope:integration-tests",
       "layer:tests"
-    ]
+    ],
+    "targets": {
+      "test": {
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/scripts/coverage.mjs"
+        ]
+      }
+    }
   },
   "devDependencies": {
     "@analogjs/router": "~2.8.0",

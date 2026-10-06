@@ -27,6 +27,7 @@ import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { StyleResolver, type StyleSheet, type StyleTarget } from '@ng-native/fabric';
 import type { CaseNode } from './fixtures/css-oracle-cases.ts';
+import { measureCpu } from './measure-cpu.ts';
 import {
   CORPUS_CASES,
   CORPUS_PROPERTIES,
@@ -52,15 +53,15 @@ const { flattenTailwind } = require('@ng-native/tailwind') as {
 const NAMES = Object.keys(LIBRARIES) as LibraryName[];
 
 /**
- * Generous on purpose. Every library compiles in well under a quarter of this on a laptop; the
- * number is here to catch a path that went quadratic, not to measure anything.
+ * A generous CPU budget to catch a path that went quadratic. Wall time under concurrent coverage
+ * includes instrumentation and scheduling delays, which say nothing about the compiler's work.
  */
 const BUDGET_MS = 3000;
 
 interface Compiled {
   sheet: StyleSheet;
   messages: string[];
-  ms: number;
+  css: string;
 }
 
 const compiled = new Map<LibraryName, Compiled>();
@@ -74,19 +75,26 @@ function compile(library: LibraryName): Compiled {
   if (cached) return cached;
   const css = library.startsWith('tailwind') ? flattenTailwind(source(library)) : source(library);
   const messages: string[] = [];
-  const started = performance.now();
   const sheet = compileCss(css, library, { onUnsupported: (message) => messages.push(message) });
-  const result = { sheet, messages, ms: performance.now() - started };
+  const result = { sheet, messages, css };
   compiled.set(library, result);
   return result;
 }
 
 describe('the corpus compiles', () => {
   for (const library of NAMES) {
-    it(`${library}: the whole sheet, without throwing, inside ${BUDGET_MS}ms`, () => {
-      const { sheet, ms } = compile(library);
+    it(`${library}: the whole sheet, without throwing, inside ${BUDGET_MS}ms of CPU`, () => {
+      const { sheet, css } = compile(library);
       assert.ok(sheet.rules.length > 0, 'it produced rules');
-      assert.ok(ms < BUDGET_MS, `took ${Math.round(ms)}ms`);
+      const ms = measureCpu(
+        require.resolve('@ng-native/metro/css/compile.cjs'),
+        `const messages = [];
+         subject.compileCss(input.css, input.library, {
+           onUnsupported: (message) => messages.push(message),
+         });`,
+        { css, library },
+      );
+      assert.ok(ms < BUDGET_MS, `took ${Math.round(ms)}ms of CPU`);
     });
   }
 });

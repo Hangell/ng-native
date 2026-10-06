@@ -943,7 +943,9 @@ export class Derived {
     // again: the edit landed and the screen went on showing the old answer.
     const file = fixture('hmr-label.ts');
     const service = readFileSync(file, 'utf8');
-    await compileSource(service, file, fixture('hmr-label.generated.ts'), { dev: true });
+    await compileSource(service, file, fixture(`hmr-label.process-${process.pid}.generated.ts`), {
+      dev: true,
+    });
     const reader = `import { Component, inject } from '@angular/core';
 import { Text } from '../../components/src/text.ts';
 import { Label } from './hmr-label.ts';
