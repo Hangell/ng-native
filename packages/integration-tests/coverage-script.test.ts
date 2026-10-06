@@ -206,6 +206,7 @@ describe('coverage script integrity', () => {
   for (const minimum of [undefined, '', 'NaN', '-1', '101', 'Infinity']) {
     it(`rejects the invalid floor ${JSON.stringify(minimum)}`, () =>
       workspace((root) => {
+        assert.equal(cli(root).status, 0, 'a previous run left a valid summary');
         rejects(root, /--min|minimum/i, [
           '--report',
           '--min',

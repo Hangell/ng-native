@@ -429,6 +429,7 @@ function report(minimum) {
 }
 
 function main() {
+  rmSync(SUMMARY, { force: true });
   const args = process.argv.slice(2);
   const minimumAt = args.indexOf('--min');
   const raw = args[minimumAt + 1];
@@ -439,7 +440,6 @@ function main() {
   ) {
     throw new Error('--min must be a finite percentage between 0 and 100.');
   }
-  rmSync(SUMMARY, { force: true });
   if (args.includes('--report')) {
     if (existsSync(INCOMPLETE)) throw new Error('Coverage run incomplete. Rerun pnpm coverage.');
   } else {
