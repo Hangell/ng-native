@@ -93,28 +93,6 @@ syncBuiltinESMExports();
 }
 
 describe('coverage script integrity', () => {
-  it('combines complementary coverage from process-private copies before folding onto the source', () => {
-    workspace((root) => {
-      const record = (pid: number, first: number, second: number) =>
-        `SF:../components/src/view-base.process-${pid}.generated.ts\n` +
-        `DA:1,${first}\nDA:2,${second}\nLF:2\nLH:1\n` +
-        `BRDA:1,0,0,${first}\nBRDA:1,0,1,${second}\nBRF:2\nBRH:1\nend_of_record\n`;
-      writeFileSync(path.join(root, 'coverage/native.info'), record(11, 1, 0) + record(12, 0, 1));
-      const result = cli(root);
-      assert.equal(result.status, 0, result.stdout + result.stderr);
-      const files = summary(root).files;
-      const view = files.find((entry) => entry.file === 'packages/components/src/view-base.ts');
-      assert.ok(view, 'the copies are counted under the source name');
-      assert.equal(view.lines, 2);
-      assert.equal(view.covered, 2);
-      assert.equal(view.branchesCovered, 2);
-      assert.equal(
-        files.length,
-        2,
-        'one component source and the engine, without duplicate copies',
-      );
-    });
-  });
   it('merges complete Node and browser records, including CRLF and unexecuted branches', () => {
     workspace((root) => {
       writeFileSync(

@@ -132,11 +132,7 @@ function parseLcov(text, cwd) {
       if (current) throw new Error('Unfinished LCOV record before SF.');
       if (!line.slice(3).trim()) throw new Error('Empty LCOV source path.');
       // lcov paths are relative to the suite's own directory; the merge key has to be absolute.
-      // Process-private AOT copies differ only in import paths; their line and branch IDs match.
-      // Merge those measurements before comparing generated code with the original source.
-      file = path
-        .resolve(cwd, line.slice(3).trim())
-        .replace(/\.process-\d+(?=\.generated\.ts$)/, '');
+      file = path.resolve(cwd, line.slice(3).trim());
       current = { lines: new Map(), branches: new Map(), counts: new Map() };
     } else if (line === 'end_of_record') {
       if (!current) throw new Error('LCOV terminator outside a source record.');
